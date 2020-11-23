@@ -5,5 +5,5 @@
     <string name="pressure">Давление</string>
     <string name="humidity">Влажность</string>
     <string name="wind_speed">Скорость ветра</string>
-    <string name="refresh">Обновить</string>
+    <string name="search">Поиск</string>
 </resources>
