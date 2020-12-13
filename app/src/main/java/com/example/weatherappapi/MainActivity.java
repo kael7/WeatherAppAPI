@@ -1,6 +1,7 @@
 package com.example.weatherappapi;
 
-import android.content.res.Configuration;
+import android.app.FragmentManager;
+import android.app.FragmentTransaction;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.ContextMenu;
@@ -8,15 +9,15 @@ import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.Menu;
-import android.widget.Button;
 import android.widget.EditText;
 
-import com.example.weatherappapi.City.CityDetailFragment;
+import com.example.weatherappapi.Fragments.HistoryFragment;
+import com.example.weatherappapi.Fragments.HomeFragment;
+import com.example.weatherappapi.Fragments.SettingsFragment;
 import com.example.weatherappapi.model.WeatherRequest;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.google.android.material.snackbar.Snackbar;
 import com.google.android.material.navigation.NavigationView;
-import com.google.android.material.textfield.TextInputEditText;
 import com.google.gson.Gson;
 
 import androidx.annotation.NonNull;
@@ -24,7 +25,7 @@ import androidx.appcompat.app.ActionBarDrawerToggle;
 import androidx.appcompat.widget.PopupMenu;
 import androidx.appcompat.widget.SearchView;
 import androidx.core.view.GravityCompat;
-import androidx.fragment.app.FragmentTransaction;
+import androidx.fragment.app.Fragment;
 import androidx.navigation.ui.AppBarConfiguration;
 import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.appcompat.app.AppCompatActivity;
@@ -38,18 +39,16 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import javax.net.ssl.HttpsURLConnection;
 
 public class MainActivity extends AppCompatActivity implements NavigationView.OnNavigationItemSelectedListener{
-    private static final String CITY_KEY = "CITY";
-    private boolean isExistWeather;  // Можно ли расположить рядом фрагмент с погодой
+    HomeFragment homeFragment;
+    HistoryFragment historyFragment;
+    SettingsFragment settingsFragment;
+
     private static final String TAG = "WEATHER";
-    private Pattern checkLogin = Pattern.compile("^[A-Z][a-z]{2,}$"); // Регулярные выражения позволяют проверить на соответствие шаблону
-    private TextInputEditText cityInput;
-    private FloatingActionButton floatingActionButton;
     private EditText city;
     private EditText temperature;
     private EditText pressure;
@@ -64,6 +63,11 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        // создадим фрагменты
+        homeFragment = new HomeFragment();
+        historyFragment = new HistoryFragment();
+        settingsFragment = new SettingsFragment();
+
         Toolbar toolbar = initToolbar();
         initFab();
         initDrawer(toolbar);
@@ -77,10 +81,6 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         pressure = findViewById(R.id.textPressure);
         humidity = findViewById(R.id.textHumidity);
         windSpeed = findViewById(R.id.textWindspeed);
-        cityInput = findViewById(R.id.textInputCity);
-        floatingActionButton = findViewById(R.id.floatingActionButton);
-        Button search = findViewById(R.id.search);
-        isExistWeather = getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE;  // Определение, можно ли будет расположить рядом герб в другом фрагменте
     }
 
     private Toolbar initToolbar() {
@@ -128,30 +128,33 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
                     }
                 });
                 menu.show();
-
             }
         });
     }
 
-//    private void initList() {
-//        RecyclerView recyclerView = findViewById(R.id.recycler_list);
-//
-//        // Эта установка повышает производительность системы
-//        recyclerView.setHasFixedSize(true);
-//
-//        // Будем работать со встроенным менеджером
-//        LinearLayoutManager layoutManager = new LinearLayoutManager(this);
-//        recyclerView.setLayoutManager(layoutManager);
-//
-//        // Устанавливаем адаптер
-//        adapter = new ListAdapter(initData(), this);
-//        recyclerView.setAdapter(adapter);
-//    }
+    private void initList() {
+        RecyclerView recyclerView = findViewById(R.id.recycler_list);
+
+        // Эта установка повышает производительность системы
+        recyclerView.setHasFixedSize(true);
+
+        // Будем работать со встроенным менеджером
+        LinearLayoutManager layoutManager = new LinearLayoutManager(this);
+        recyclerView.setLayoutManager(layoutManager);
+
+        // Устанавливаем адаптер
+        adapter = new ListAdapter(initData(), this);
+        recyclerView.setAdapter(adapter);
+    }
 
     private List<String> initData() {
+        String[] values = new String[] { "Almaty", "Shymkent", "Karagandy",
+                "Taraz", "Nur-Sultan", "Pavlodar", "Oskemen", "Semeı",
+                "Aktobe", "Aktau"};
+
         List<String> list = new ArrayList<>();
-        for (int i = 0; i < 5; i++) {
-            list.add(String.format("Element %d", i));
+        for (int i = 0; i < values.length; i++) {
+            list.add(values[i]);
         }
         return list;
     }
@@ -220,6 +223,7 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
             public boolean onQueryTextSubmit(String query) {
                 Snackbar.make(searchText, query, Snackbar.LENGTH_LONG).show();
                 getDetails(query);
+//                adapter.addItem(query);
                 return true;
             }
             // Реагирует на нажатие каждой клавиши
@@ -239,13 +243,29 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
 
         switch (id) {
             case R.id.nav_home:
-                //TODO:
+                FragmentManager fm = getFragmentManager();
+                FragmentTransaction ft = fm.beginTransaction();
+
+                HomeFragment homeFragment = new HomeFragment();
+                ft.replace(R.id.fragment_container, homeFragment);
+                ft.addToBackStack("");
+                ft.commit();
                 break;
             case R.id.nav_history:
-                //TODO:
+                FragmentManager fm2 = getFragmentManager();
+                FragmentTransaction ft2 = fm2.beginTransaction();
+
+                HistoryFragment historyFragment = new HistoryFragment();
+                ft2.replace(R.id.fragment_container, historyFragment);
+                ft2.commit();
                 break;
             case R.id.nav_settings:
-                //TODO:
+                FragmentManager fm3 = getFragmentManager();
+                FragmentTransaction ft3 = fm3.beginTransaction();
+
+                SettingsFragment settingsFragment  = new SettingsFragment();
+                ft3.replace(R.id.fragment_container, settingsFragment);
+                ft3.commit();
                 break;
             case R.id.nav_share:
                 //TODO:
@@ -310,12 +330,6 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         pressure.setText(String.format("%d", weatherRequest.getMain().getPressure()));
         humidity.setText(String.format("%d", weatherRequest.getMain().getHumidity()));
         windSpeed.setText(String.format("%d", weatherRequest.getWind().getSpeed()));
-
-        System.out.println(weatherRequest.getName());
-        System.out.println(weatherRequest.getMain().getTemp());
-        System.out.println(weatherRequest.getMain().getPressure());
-        System.out.println(weatherRequest.getMain().getHumidity());
-        System.out.println(weatherRequest.getWind().getSpeed());
     }
 
     private String getLines(BufferedReader in) {
