@@ -1,81 +1,74 @@
 package com.example.weatherappapi;
 
-import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
-import androidx.appcompat.app.AppCompatActivity;
-
-import android.app.FragmentTransaction;
-import android.content.Intent;
 import android.content.res.Configuration;
-import android.graphics.drawable.Icon;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Parcelable;
-import android.os.PersistableBundle;
-import android.provider.SyncStateContract;
 import android.util.Log;
+import android.view.ContextMenu;
+import android.view.MenuInflater;
+import android.view.MenuItem;
 import android.view.View;
+import android.view.Menu;
 import android.widget.Button;
 import android.widget.EditText;
-import android.widget.ImageView;
-import android.widget.TextView;
-import android.widget.Toast;
 
-import com.example.weatherappapi.model.Main;
-import com.example.weatherappapi.model.Weather;
+import com.example.weatherappapi.City.CityDetailFragment;
 import com.example.weatherappapi.model.WeatherRequest;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.google.android.material.snackbar.Snackbar;
+import com.google.android.material.navigation.NavigationView;
 import com.google.android.material.textfield.TextInputEditText;
-import com.google.android.material.textfield.TextInputLayout;
 import com.google.gson.Gson;
+
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.ActionBarDrawerToggle;
+import androidx.appcompat.widget.PopupMenu;
+import androidx.appcompat.widget.SearchView;
+import androidx.core.view.GravityCompat;
+import androidx.fragment.app.FragmentTransaction;
+import androidx.navigation.ui.AppBarConfiguration;
+import androidx.drawerlayout.widget.DrawerLayout;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.Toolbar;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
-import java.io.Serializable;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import javax.net.ssl.HttpsURLConnection;
 
-public class MainActivity extends AppCompatActivity {
-    public static final String CITY_KEY = "CITY";
+public class MainActivity extends AppCompatActivity implements NavigationView.OnNavigationItemSelectedListener{
+    private static final String CITY_KEY = "CITY";
     private boolean isExistWeather;  // Можно ли расположить рядом фрагмент с погодой
     private static final String TAG = "WEATHER";
     private Pattern checkLogin = Pattern.compile("^[A-Z][a-z]{2,}$"); // Регулярные выражения позволяют проверить на соответствие шаблону
     private TextInputEditText cityInput;
     private FloatingActionButton floatingActionButton;
-    public EditText city;
-    public EditText temperature;
-    public EditText pressure;
-    public EditText humidity;
-    public EditText windSpeed;
-    private static final String WEATHER_URL_PART_1 = "https://api.openweathermap.org/data/2.5/weather?q=";
-    private static final String WEATHER_URL_PART_3 = ",&appid=";
+    private EditText city;
+    private EditText temperature;
+    private EditText pressure;
+    private EditText humidity;
+    private EditText windSpeed;
+
+    private AppBarConfiguration mAppBarConfiguration;
+    private ListAdapter adapter;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        Toolbar toolbar = initToolbar();
+        initFab();
+        initDrawer(toolbar);
+//        initList();
         init();
-        floatingActionButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                Snackbar.make(view, "Вы нажали на Snackbar", Snackbar.LENGTH_LONG).setAction("Action", null).show();
-            }
-        });
-    }
-
-    @Override
-    public void onSaveInstanceState(@NonNull Bundle outState, @NonNull PersistableBundle outPersistentState) {
-        super.onSaveInstanceState(outState, outPersistentState);
-    }
-
-    @Override
-    public void onRestoreInstanceState(@Nullable Bundle savedInstanceState, @Nullable PersistableBundle persistentState) {
-        super.onRestoreInstanceState(savedInstanceState, persistentState);
     }
 
     public void init() {
@@ -90,19 +83,191 @@ public class MainActivity extends AppCompatActivity {
         isExistWeather = getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE;  // Определение, можно ли будет расположить рядом герб в другом фрагменте
     }
 
-    // Обработка нажатия кнопки
-    public void clickOnSearchButton(View view) {
-        validate(cityInput, checkLogin, "Это не город!");
-        String cityName = cityInput.getText().toString();
-        Toast.makeText(getApplicationContext(), cityName, Toast.LENGTH_SHORT).show();
-        getDetails(cityName);
+    private Toolbar initToolbar() {
+        Toolbar toolbar = findViewById(R.id.toolbar);
+        setSupportActionBar(toolbar);
+        return toolbar;
+    }
+
+    private void initDrawer(Toolbar toolbar) {
+        DrawerLayout drawer = findViewById(R.id.drawer_layout);
+        NavigationView navigationView = findViewById(R.id.nav_view);
+        ActionBarDrawerToggle toggle = new ActionBarDrawerToggle(
+                this, drawer, toolbar, R.string.navigation_drawer_open, R.string.navigation_drawer_close);
+        drawer.addDrawerListener(toggle);
+        toggle.syncState();
+        navigationView.setNavigationItemSelectedListener(this);
+    }
+
+    private void initFab() {
+        FloatingActionButton fab = findViewById(R.id.fab);
+        fab.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                PopupMenu menu = new PopupMenu(MainActivity.this, view);
+                getMenuInflater().inflate(R.menu.popup_menu, menu.getMenu());
+                menu.getMenu().findItem(R.id.update_popup).setVisible(false);
+                menu.getMenu().add(0, R.id.custom_id, 12, "Menu item added");
+                menu.setOnMenuItemClickListener(new PopupMenu.OnMenuItemClickListener() {
+                    @Override
+                    public boolean onMenuItemClick(MenuItem item) {
+                        int id = item.getItemId();
+                        switch (id) {
+                            case R.id.add_popup:
+                                adapter.addItem(String.format("New element %d", adapter.getItemCount()));
+                                return true;
+                            case R.id.clear_popup:
+                                adapter.clearItems();
+                                return true;
+                            case R.id.custom_id:
+                                Snackbar.make(view, "Menu item added - clicked", Snackbar.LENGTH_LONG)
+                                        .setAction("Action", null).show();
+                                return true;
+                        }
+                        return true;
+                    }
+                });
+                menu.show();
+
+            }
+        });
+    }
+
+//    private void initList() {
+//        RecyclerView recyclerView = findViewById(R.id.recycler_list);
+//
+//        // Эта установка повышает производительность системы
+//        recyclerView.setHasFixedSize(true);
+//
+//        // Будем работать со встроенным менеджером
+//        LinearLayoutManager layoutManager = new LinearLayoutManager(this);
+//        recyclerView.setLayoutManager(layoutManager);
+//
+//        // Устанавливаем адаптер
+//        adapter = new ListAdapter(initData(), this);
+//        recyclerView.setAdapter(adapter);
+//    }
+
+    private List<String> initData() {
+        List<String> list = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            list.add(String.format("Element %d", i));
+        }
+        return list;
+    }
+
+    @Override
+    public void onCreateContextMenu(ContextMenu menu, View v, ContextMenu.ContextMenuInfo menuInfo) {
+        super.onCreateContextMenu(menu, v, menuInfo);
+        MenuInflater inflater = getMenuInflater();
+        inflater.inflate(R.menu.context_menu, menu);
+    }
+
+    @Override
+    public boolean onContextItemSelected(@NonNull MenuItem item) {
+        ContextMenu.ContextMenuInfo menuInfo = item.getMenuInfo();
+        int id = item.getItemId();
+        switch (id) {
+            case R.id.add_context:
+                adapter.addItem(String.format("New element %d", adapter.getItemCount()));
+                return true;
+            case R.id.update_context:
+                adapter.updateItem(String.format("Updated element %d", adapter.getMenuPosition()), adapter.getMenuPosition());
+                return true;
+            case R.id.remove_context:
+                adapter.removeItem(adapter.getMenuPosition());
+                return true;
+            case R.id.clear_context:
+                adapter.clearItems();
+                return true;
+        }
+        return super.onContextItemSelected(item);
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        // Обработка выбора пункта меню приложения (Activity)
+        int id = item.getItemId();
+
+        //noinspection SimplifiableIfStatement
+        if (id == R.id.action_settings) {
+            return true;
+        }
+
+        if (id == R.id.action_add){
+            adapter.addItem("New element");
+            return true;
+        }
+
+        if (id == R.id.action_clear){
+            adapter.clearItems();
+            return true;
+        }
+        return super.onOptionsItemSelected(item);
+    }
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        // Inflate the menu; this adds items to the action bar if it is present.
+        getMenuInflater().inflate(R.menu.main, menu);
+
+        MenuItem search = menu.findItem(R.id.action_search);
+        // Строка поиска
+        final SearchView searchText = (SearchView) search.getActionView();
+        searchText.setOnQueryTextListener(new SearchView.OnQueryTextListener() {
+            // Реагирует на конец ввода поиска
+            @Override
+            public boolean onQueryTextSubmit(String query) {
+                Snackbar.make(searchText, query, Snackbar.LENGTH_LONG).show();
+                getDetails(query);
+                return true;
+            }
+            // Реагирует на нажатие каждой клавиши
+            @Override
+            public boolean onQueryTextChange(String newText) {
+                return true;
+            }
+        });
+
+        return true;
+    }
+
+    @Override
+    public boolean onNavigationItemSelected(@NonNull MenuItem item) {
+        // Handle navigation view item clicks here.
+        int id = item.getItemId();
+
+        switch (id) {
+            case R.id.nav_home:
+                //TODO:
+                break;
+            case R.id.nav_history:
+                //TODO:
+                break;
+            case R.id.nav_settings:
+                //TODO:
+                break;
+            case R.id.nav_share:
+                //TODO:
+                break;
+            case R.id.nav_send:
+                //TODO:
+                break;
+        }
+        DrawerLayout drawer = findViewById(R.id.drawer_layout);
+        drawer.closeDrawer(GravityCompat.START);
+        return true;
     }
 
     public void getDetails(String city) {
         try {
-            String WEATHER_URL_PART_2 = city;
-            final URL uri = new URL(WEATHER_URL_PART_1 + WEATHER_URL_PART_2 + WEATHER_URL_PART_3 + BuildConfig.WEATHER_API_KEY);
-            Snackbar.make(cityInput, "Вы ищите погоду для города: " + WEATHER_URL_PART_2, Snackbar.LENGTH_LONG).setAction("Action", null).show();
+            StringBuilder sb = new StringBuilder();
+            sb.append("https://api.openweathermap.org/data/2.5/weather?q=");
+            sb.append(city);
+            sb.append(",&appid=");
+            sb.append(BuildConfig.WEATHER_API_KEY);
+
+            final URL uri = new URL(sb.toString());
             new Thread(new Runnable() {
                 public void run() {
                     HttpsURLConnection urlConnection = null;
@@ -120,19 +285,7 @@ public class MainActivity extends AppCompatActivity {
                         runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
-                                if (isExistWeather) {
-                                    displayWeather(weatherRequest);
-                                } else {
-                                    // Если нельзя вывести погоду рядом, откроем вторую activity
-                                    Intent intent = new Intent();
-                                    intent.setClass(MainActivity.this, CityActivity.class);
-                                    intent.putExtra("city", weatherRequest.getName());
-                                    intent.putExtra("temperature", weatherRequest.getMain().getTemp());
-                                    intent.putExtra("pressure", weatherRequest.getMain().getPressure());
-                                    intent.putExtra("humidity", weatherRequest.getMain().getHumidity());
-                                    intent.putExtra("windSpeed", weatherRequest.getWind().getSpeed());
-                                    startActivity(intent);
-                                }
+                                displayWeather(weatherRequest);
                             }
                         });
                     } catch (Exception e) {
@@ -157,30 +310,26 @@ public class MainActivity extends AppCompatActivity {
         pressure.setText(String.format("%d", weatherRequest.getMain().getPressure()));
         humidity.setText(String.format("%d", weatherRequest.getMain().getHumidity()));
         windSpeed.setText(String.format("%d", weatherRequest.getWind().getSpeed()));
+
+        System.out.println(weatherRequest.getName());
+        System.out.println(weatherRequest.getMain().getTemp());
+        System.out.println(weatherRequest.getMain().getPressure());
+        System.out.println(weatherRequest.getMain().getHumidity());
+        System.out.println(weatherRequest.getWind().getSpeed());
     }
 
     private String getLines(BufferedReader in) {
         return in.lines().collect(Collectors.joining("\n"));
     }
 
-    // Валидация
-    private void validate(TextView tv, Pattern check, String message) {
-        String value = tv.getText().toString();
-        if (check.matcher(value).matches()) {    // Проверим на основе регулярных выражений
-            hideError(tv);
+    @Override
+    public void onBackPressed() {
+        DrawerLayout drawer = (DrawerLayout) findViewById(R.id.drawer_layout);
+        if (drawer.isDrawerOpen(GravityCompat.START)) {
+            drawer.closeDrawer(GravityCompat.START);
         } else {
-            showError(tv, message);
+            super.onBackPressed();
         }
-    }
-
-    // Показать ошибку
-    private void showError(TextView view, String message) {
-        view.setError(message);
-    }
-
-    // спрятать ошибку
-    private void hideError(TextView view) {
-        view.setError(null);
     }
 
 }
