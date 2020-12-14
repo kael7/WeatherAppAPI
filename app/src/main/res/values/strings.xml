@@ -26,4 +26,9 @@
     <string name="update">Update</string>
     <string name="remove">Remove</string>
     <string name="clear">Clear</string>
+
+    <string name="alert_dialog_1">Alert Dialog с Fail connection</string>
+    <string name="exclamation">Важное сообщение!</string>
+    <string name="press_button">Нажмите кнопку чтобы закрыть окно!</string>
+    <string name="button">OK</string>
 </resources>

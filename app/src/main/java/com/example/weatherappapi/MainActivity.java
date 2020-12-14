@@ -1,7 +1,9 @@
 package com.example.weatherappapi;
 
+import android.app.AlertDialog;
 import android.app.FragmentManager;
 import android.app.FragmentTransaction;
+import android.content.DialogInterface;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.ContextMenu;
@@ -10,6 +12,7 @@ import android.view.MenuItem;
 import android.view.View;
 import android.view.Menu;
 import android.widget.EditText;
+import android.widget.Toast;
 
 import com.example.weatherappapi.Fragments.HistoryFragment;
 import com.example.weatherappapi.Fragments.HomeFragment;
@@ -43,10 +46,10 @@ import java.util.stream.Collectors;
 
 import javax.net.ssl.HttpsURLConnection;
 
-public class MainActivity extends AppCompatActivity implements NavigationView.OnNavigationItemSelectedListener{
-    HomeFragment homeFragment;
-    HistoryFragment historyFragment;
-    SettingsFragment settingsFragment;
+public class MainActivity extends AppCompatActivity implements NavigationView.OnNavigationItemSelectedListener {
+    private HomeFragment homeFragment;
+    private HistoryFragment historyFragment;
+    private SettingsFragment settingsFragment;
 
     private static final String TAG = "WEATHER";
     private EditText city;
@@ -73,6 +76,11 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         initDrawer(toolbar);
 //        initList();
         init();
+
+        FragmentManager fm = getFragmentManager();
+        FragmentTransaction ft = fm.beginTransaction();
+        ft.replace(R.id.fragment_container, homeFragment);
+        ft.commit();
     }
 
     public void init() {
@@ -148,7 +156,7 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
     }
 
     private List<String> initData() {
-        String[] values = new String[] { "Almaty", "Shymkent", "Karagandy",
+        String[] values = new String[]{"Almaty", "Shymkent", "Karagandy",
                 "Taraz", "Nur-Sultan", "Pavlodar", "Oskemen", "Semeı",
                 "Aktobe", "Aktau"};
 
@@ -197,12 +205,12 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
             return true;
         }
 
-        if (id == R.id.action_add){
+        if (id == R.id.action_add) {
             adapter.addItem("New element");
             return true;
         }
 
-        if (id == R.id.action_clear){
+        if (id == R.id.action_clear) {
             adapter.clearItems();
             return true;
         }
@@ -226,6 +234,7 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
 //                adapter.addItem(query);
                 return true;
             }
+
             // Реагирует на нажатие каждой клавиши
             @Override
             public boolean onQueryTextChange(String newText) {
@@ -246,16 +255,13 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
                 FragmentManager fm = getFragmentManager();
                 FragmentTransaction ft = fm.beginTransaction();
 
-                HomeFragment homeFragment = new HomeFragment();
                 ft.replace(R.id.fragment_container, homeFragment);
-                ft.addToBackStack("");
                 ft.commit();
                 break;
             case R.id.nav_history:
                 FragmentManager fm2 = getFragmentManager();
                 FragmentTransaction ft2 = fm2.beginTransaction();
 
-                HistoryFragment historyFragment = new HistoryFragment();
                 ft2.replace(R.id.fragment_container, historyFragment);
                 ft2.commit();
                 break;
@@ -263,7 +269,6 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
                 FragmentManager fm3 = getFragmentManager();
                 FragmentTransaction ft3 = fm3.beginTransaction();
 
-                SettingsFragment settingsFragment  = new SettingsFragment();
                 ft3.replace(R.id.fragment_container, settingsFragment);
                 ft3.commit();
                 break;
@@ -305,12 +310,41 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
                         runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
-                                displayWeather(weatherRequest);
+                                try {
+                                    displayWeather(weatherRequest);
+                                } catch (NullPointerException e) {
+                                    System.out.println("Error");
+                                }
                             }
                         });
                     } catch (Exception e) {
                         Log.e(TAG, "Fail connection", e);
                         e.printStackTrace();
+
+                        // Создаём билдер и передаём контекст приложения
+                        AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
+                        // В билдере указываем заголовок окна (можно указывать как ресурс,
+                        // так и строку)
+                        builder.setTitle(R.string.exclamation)
+                                // Указываем сообщение в окне (также есть вариант со
+                                // строковым параметром)
+                                .setMessage(R.string.press_button)
+                                // Можно указать и пиктограмму
+                                .setIcon(R.mipmap.ic_launcher_round)
+                                // Из этого окна нельзя выйти кнопкой Back
+                                .setCancelable(false)
+                                // Устанавливаем кнопку (название кнопки также можно
+                                // задавать строкой)
+                                .setPositiveButton(R.string.button,
+                                        // Ставим слушатель, нажатие будем обрабатывать
+                                        new DialogInterface.OnClickListener() {
+                                            public void onClick(DialogInterface dialog, int id) {
+                                                Toast.makeText(MainActivity.this, "Кнопка нажата", Toast.LENGTH_SHORT).show();
+                                            }
+                                        });
+                        AlertDialog alert = builder.create();
+                        alert.show();
+                        Toast.makeText(MainActivity.this, "Диалог открыт", Toast.LENGTH_SHORT).show();
                     } finally {
                         if (null != urlConnection) {
                             urlConnection.disconnect();
