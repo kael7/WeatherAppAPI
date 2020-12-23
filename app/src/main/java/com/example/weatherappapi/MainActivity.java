@@ -3,9 +3,16 @@ package com.example.weatherappapi;
 import android.app.AlertDialog;
 import android.app.FragmentManager;
 import android.app.FragmentTransaction;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.content.ComponentName;
+import android.content.Context;
 import android.content.DialogInterface;
+import android.content.Intent;
+import android.content.ServiceConnection;
+import android.os.Build;
 import android.os.Bundle;
-import android.util.Log;
+import android.os.IBinder;
 import android.view.ContextMenu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
@@ -17,18 +24,17 @@ import android.widget.Toast;
 import com.example.weatherappapi.Fragments.HistoryFragment;
 import com.example.weatherappapi.Fragments.HomeFragment;
 import com.example.weatherappapi.Fragments.SettingsFragment;
+import com.example.weatherappapi.Old.BoundService;
 import com.example.weatherappapi.model.WeatherRequest;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.google.android.material.snackbar.Snackbar;
 import com.google.android.material.navigation.NavigationView;
-import com.google.gson.Gson;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.ActionBarDrawerToggle;
 import androidx.appcompat.widget.PopupMenu;
 import androidx.appcompat.widget.SearchView;
 import androidx.core.view.GravityCompat;
-import androidx.fragment.app.Fragment;
 import androidx.navigation.ui.AppBarConfiguration;
 import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.appcompat.app.AppCompatActivity;
@@ -37,29 +43,73 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.net.MalformedURLException;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
-
-import javax.net.ssl.HttpsURLConnection;
 
 public class MainActivity extends AppCompatActivity implements NavigationView.OnNavigationItemSelectedListener {
     private HomeFragment homeFragment;
     private HistoryFragment historyFragment;
     private SettingsFragment settingsFragment;
 
-    private static final String TAG = "WEATHER";
+    private AppBarConfiguration mAppBarConfiguration;
+    private ListAdapter adapter;
+
     private EditText city;
     private EditText temperature;
     private EditText pressure;
     private EditText humidity;
     private EditText windSpeed;
 
-    private AppBarConfiguration mAppBarConfiguration;
-    private ListAdapter adapter;
+    private boolean binded = false;
+    private WeatherService weatherService;
+
+    ServiceConnection weatherServiceConnection = new ServiceConnection() {
+        @Override
+        public void onServiceConnected(ComponentName name, IBinder service) {
+            WeatherService.LocalWeatherBinder binder = (WeatherService.LocalWeatherBinder) service;
+            weatherService = binder.getService();
+            binded = true;
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+            binded = false;
+        }
+    };
+
+    // When Activity starting.
+    @Override
+    protected void onStart() {
+        super.onStart();
+
+        // Create Intent object for WeatherService.
+        Intent intent = new Intent(this, WeatherService.class);
+
+        // Call bindService(..) method to bind service with UI.
+        this.bindService(intent, weatherServiceConnection, Context.BIND_AUTO_CREATE);
+    }
+
+    // Activity stop
+    @Override
+    protected void onStop() {
+        super.onStop();
+        if (binded) {
+            // Unbind Service
+            this.unbindService(weatherServiceConnection);
+            binded = false;
+        }
+    }
+
+    // When user click on 'Search' button.
+    public void showWeather(String location)  {
+        String[] weather= this.weatherService.getWeatherToday(location);
+        this.city.setText(weather[0]);
+        this.temperature.setText(weather[1]);
+        this.pressure.setText(weather[2]);
+        this.humidity.setText(weather[3]);
+        this.windSpeed.setText(weather[4]);
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -230,8 +280,17 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
             @Override
             public boolean onQueryTextSubmit(String query) {
                 Snackbar.make(searchText, query, Snackbar.LENGTH_LONG).show();
-                getDetails(query);
 //                adapter.addItem(query);
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            showWeather(query);
+                        } catch (NullPointerException e) {
+                            System.out.println("Error");
+                        }
+                    }
+                });
                 return true;
             }
 
@@ -284,90 +343,31 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         return true;
     }
 
-    public void getDetails(String city) {
-        try {
-            StringBuilder sb = new StringBuilder();
-            sb.append("https://api.openweathermap.org/data/2.5/weather?q=");
-            sb.append(city);
-            sb.append(",&appid=");
-            sb.append(BuildConfig.WEATHER_API_KEY);
-
-            final URL uri = new URL(sb.toString());
-            new Thread(new Runnable() {
-                public void run() {
-                    HttpsURLConnection urlConnection = null;
-                    try {
-                        urlConnection = (HttpsURLConnection) uri.openConnection();
-                        urlConnection.setRequestMethod("GET"); // установка метода получения данных -GET
-                        urlConnection.setReadTimeout(10000); // установка таймаута - 10 000 миллисекунд
-                        BufferedReader in = new BufferedReader(new InputStreamReader(urlConnection.getInputStream())); // читаем  данные в поток
-                        String result = getLines(in);
-
-                        // преобразование данных запроса в модель
-                        Gson gson = new Gson();
-                        final WeatherRequest weatherRequest = gson.fromJson(result, WeatherRequest.class);
-
-                        runOnUiThread(new Runnable() {
-                            @Override
-                            public void run() {
-                                try {
-                                    displayWeather(weatherRequest);
-                                } catch (NullPointerException e) {
-                                    System.out.println("Error");
-                                }
+    private void failConnection(){
+        // Создаём билдер и передаём контекст приложения
+        AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
+        // В билдере указываем заголовок окна (можно указывать как ресурс,
+        // так и строку)
+        builder.setTitle(R.string.exclamation)
+                // Указываем сообщение в окне (также есть вариант со
+                // строковым параметром)
+                .setMessage(R.string.press_button)
+                // Можно указать и пиктограмму
+                .setIcon(R.mipmap.ic_launcher_round)
+                // Из этого окна нельзя выйти кнопкой Back
+                .setCancelable(false)
+                // Устанавливаем кнопку (название кнопки также можно
+                // задавать строкой)
+                .setPositiveButton(R.string.button,
+                        // Ставим слушатель, нажатие будем обрабатывать
+                        new DialogInterface.OnClickListener() {
+                            public void onClick(DialogInterface dialog, int id) {
+                                Toast.makeText(MainActivity.this, "Кнопка нажата", Toast.LENGTH_SHORT).show();
                             }
                         });
-                    } catch (Exception e) {
-                        Log.e(TAG, "Fail connection", e);
-                        e.printStackTrace();
-
-                        // Создаём билдер и передаём контекст приложения
-                        AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
-                        // В билдере указываем заголовок окна (можно указывать как ресурс,
-                        // так и строку)
-                        builder.setTitle(R.string.exclamation)
-                                // Указываем сообщение в окне (также есть вариант со
-                                // строковым параметром)
-                                .setMessage(R.string.press_button)
-                                // Можно указать и пиктограмму
-                                .setIcon(R.mipmap.ic_launcher_round)
-                                // Из этого окна нельзя выйти кнопкой Back
-                                .setCancelable(false)
-                                // Устанавливаем кнопку (название кнопки также можно
-                                // задавать строкой)
-                                .setPositiveButton(R.string.button,
-                                        // Ставим слушатель, нажатие будем обрабатывать
-                                        new DialogInterface.OnClickListener() {
-                                            public void onClick(DialogInterface dialog, int id) {
-                                                Toast.makeText(MainActivity.this, "Кнопка нажата", Toast.LENGTH_SHORT).show();
-                                            }
-                                        });
-                        AlertDialog alert = builder.create();
-                        alert.show();
-                        Toast.makeText(MainActivity.this, "Диалог открыт", Toast.LENGTH_SHORT).show();
-                    } finally {
-                        if (null != urlConnection) {
-                            urlConnection.disconnect();
-                        }
-                    }
-                }
-            }).start();
-        } catch (MalformedURLException e) {
-            Log.e(TAG, "Fail URI", e);
-            e.printStackTrace();
-        }
-    }
-
-    private void displayWeather(WeatherRequest weatherRequest) {
-        city.setText(weatherRequest.getName());
-        temperature.setText(String.format("%f2", weatherRequest.getMain().getTemp()));
-        pressure.setText(String.format("%d", weatherRequest.getMain().getPressure()));
-        humidity.setText(String.format("%d", weatherRequest.getMain().getHumidity()));
-        windSpeed.setText(String.format("%d", weatherRequest.getWind().getSpeed()));
-    }
-
-    private String getLines(BufferedReader in) {
-        return in.lines().collect(Collectors.joining("\n"));
+        AlertDialog alert = builder.create();
+        alert.show();
+        Toast.makeText(MainActivity.this, "Диалог открыт", Toast.LENGTH_SHORT).show();
     }
 
     @Override
@@ -379,5 +379,17 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
             super.onBackPressed();
         }
     }
+
+    // На Android OS версии 2.6 и выше нужно создать канал нотификации.
+    // На старых версиях канал создавать не надо
+    private void initNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            int importance = NotificationManager.IMPORTANCE_LOW;
+            NotificationChannel mChannel = new NotificationChannel("2", "name", importance);
+            notificationManager.createNotificationChannel(mChannel);
+        }
+    }
+
 
 }
