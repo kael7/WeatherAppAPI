@@ -10,6 +10,7 @@ import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.ServiceConnection;
+import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
@@ -18,17 +19,19 @@ import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.Menu;
+import android.widget.Button;
 import android.widget.EditText;
 import android.widget.Toast;
 
-import com.example.weatherappapi.Fragments.HistoryFragment;
-import com.example.weatherappapi.Fragments.HomeFragment;
-import com.example.weatherappapi.Fragments.SettingsFragment;
-import com.example.weatherappapi.Old.BoundService;
+import com.example.weatherappapi.fragments.HistoryFragment;
+import com.example.weatherappapi.fragments.HomeFragment;
+import com.example.weatherappapi.fragments.SettingsFragment;
+import com.example.weatherappapi.interfaces.OpenWeather;
 import com.example.weatherappapi.model.WeatherRequest;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.google.android.material.snackbar.Snackbar;
 import com.google.android.material.navigation.NavigationView;
+import com.google.android.material.textfield.TextInputEditText;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.ActionBarDrawerToggle;
@@ -42,16 +45,24 @@ import androidx.appcompat.widget.Toolbar;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
-import java.io.BufferedReader;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
+
+import retrofit2.Call;
+import retrofit2.Callback;
+import retrofit2.Response;
+import retrofit2.Retrofit;
+import retrofit2.converter.gson.GsonConverterFactory;
+
+import static com.example.weatherappapi.Constants.ABS_ZERO;
 
 public class MainActivity extends AppCompatActivity implements NavigationView.OnNavigationItemSelectedListener {
+    private OpenWeather openWeather;
+    private FragmentManager fragmentManager;
+    private FragmentTransaction fragmentTransaction;
     private HomeFragment homeFragment;
     private HistoryFragment historyFragment;
     private SettingsFragment settingsFragment;
-
     private AppBarConfiguration mAppBarConfiguration;
     private ListAdapter adapter;
 
@@ -60,56 +71,9 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
     private EditText pressure;
     private EditText humidity;
     private EditText windSpeed;
-
-    private boolean binded = false;
-    private WeatherService weatherService;
-
-    ServiceConnection weatherServiceConnection = new ServiceConnection() {
-        @Override
-        public void onServiceConnected(ComponentName name, IBinder service) {
-            WeatherService.LocalWeatherBinder binder = (WeatherService.LocalWeatherBinder) service;
-            weatherService = binder.getService();
-            binded = true;
-        }
-
-        @Override
-        public void onServiceDisconnected(ComponentName name) {
-            binded = false;
-        }
-    };
-
-    // When Activity starting.
-    @Override
-    protected void onStart() {
-        super.onStart();
-
-        // Create Intent object for WeatherService.
-        Intent intent = new Intent(this, WeatherService.class);
-
-        // Call bindService(..) method to bind service with UI.
-        this.bindService(intent, weatherServiceConnection, Context.BIND_AUTO_CREATE);
-    }
-
-    // Activity stop
-    @Override
-    protected void onStop() {
-        super.onStop();
-        if (binded) {
-            // Unbind Service
-            this.unbindService(weatherServiceConnection);
-            binded = false;
-        }
-    }
-
-    // When user click on 'Search' button.
-    public void showWeather(String location)  {
-        String[] weather= this.weatherService.getWeatherToday(location);
-        this.city.setText(weather[0]);
-        this.temperature.setText(weather[1]);
-        this.pressure.setText(weather[2]);
-        this.humidity.setText(weather[3]);
-        this.windSpeed.setText(weather[4]);
-    }
+    private SharedPreferences sharedPref;
+    private EditText editCity;
+    private EditText editApiKey;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -120,25 +84,103 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         homeFragment = new HomeFragment();
         historyFragment = new HistoryFragment();
         settingsFragment = new SettingsFragment();
+        fragmentManager = getFragmentManager();
+        fragmentTransaction = fragmentManager.beginTransaction();
+        fragmentTransaction.add(R.id.fragment_container, homeFragment);
+        fragmentTransaction.commit();
 
         Toolbar toolbar = initToolbar();
         initFab();
         initDrawer(toolbar);
 //        initList();
-        init();
-
-        FragmentManager fm = getFragmentManager();
-        FragmentTransaction ft = fm.beginTransaction();
-        ft.replace(R.id.fragment_container, homeFragment);
-        ft.commit();
+        initGui();
+        initPreferences();
+        initRetorfit();
+        initEvents();
     }
 
-    public void init() {
+    private void initRetorfit() {
+        Retrofit retrofit;
+        retrofit = new Retrofit.Builder()
+                // Базовая часть адреса
+                .baseUrl("https://api.openweathermap.org/")
+                // Конвертер, необходимый для преобразования JSON в объекты
+                .addConverterFactory(GsonConverterFactory.create())
+                .build();
+        // Создаём объект, при помощи которого будем выполнять запросы
+        openWeather = retrofit.create(OpenWeather.class);
+    }
+
+    private void requestRetrofit(String city, String keyApi) {
+        openWeather.loadWeather(city, keyApi).enqueue(new Callback<WeatherRequest>() {
+            @Override
+            public void onResponse(Call<WeatherRequest> call, Response<WeatherRequest> response) {
+                if (response.body() != null) {
+                    float result = response.body().getMain().getTemp() + ABS_ZERO;
+                    temperature.setText(Float.toString(result));
+                    pressure.setText(response.body().getMain().getPressure());
+                    humidity.setText(response.body().getMain().getHumidity());
+                    windSpeed.setText((int) response.body().getWind().getSpeed());
+                }
+            }
+
+            @Override
+            public void onFailure(Call<WeatherRequest> call, Throwable t) {
+                temperature.setText("Error");
+            }
+        });
+    }
+
+    // Создаём обработку клика кнопки
+    private void initEvents() {
+
+        Button button = findViewById(R.id.button2);
+        button.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                savePreferences();            // Сохраняем настройки
+                requestRetrofit(editCity.getText().toString(), editApiKey.getText().toString());
+            }
+        });
+
+
+    }
+
+    private void initPreferences() {
+        sharedPref = getPreferences(MODE_PRIVATE);
+        loadPreferences();                   // Загружаем настройки
+    }
+
+    // Сохраняем настройки
+    private void savePreferences() {
+        SharedPreferences.Editor editor = sharedPref.edit();
+        editor.putString("apiKey", editApiKey.getText().toString());
+        editor.commit();
+    }
+
+    // Загружаем настройки
+    private void loadPreferences() {
+        String apiKey = BuildConfig.WEATHER_API_KEY;
+        String loadedApiKey = sharedPref.getString("apiKey", apiKey);
+        editApiKey.setText(loadedApiKey);
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        savePreferences();
+    }
+
+    // Инициализируем пользовательские элементы
+    private void initGui() {
         city = findViewById(R.id.textCity);
         temperature = findViewById(R.id.textTemprature);
         pressure = findViewById(R.id.textPressure);
         humidity = findViewById(R.id.textHumidity);
         windSpeed = findViewById(R.id.textWindspeed);
+
+        editApiKey = findViewById(R.id.editApiKey);
+        editCity = findViewById(R.id.editCity);
     }
 
     private Toolbar initToolbar() {
@@ -192,14 +234,11 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
 
     private void initList() {
         RecyclerView recyclerView = findViewById(R.id.recycler_list);
-
         // Эта установка повышает производительность системы
         recyclerView.setHasFixedSize(true);
-
         // Будем работать со встроенным менеджером
         LinearLayoutManager layoutManager = new LinearLayoutManager(this);
         recyclerView.setLayoutManager(layoutManager);
-
         // Устанавливаем адаптер
         adapter = new ListAdapter(initData(), this);
         recyclerView.setAdapter(adapter);
@@ -209,7 +248,6 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         String[] values = new String[]{"Almaty", "Shymkent", "Karagandy",
                 "Taraz", "Nur-Sultan", "Pavlodar", "Oskemen", "Semeı",
                 "Aktobe", "Aktau"};
-
         List<String> list = new ArrayList<>();
         for (int i = 0; i < values.length; i++) {
             list.add(values[i]);
@@ -249,17 +287,14 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
     public boolean onOptionsItemSelected(MenuItem item) {
         // Обработка выбора пункта меню приложения (Activity)
         int id = item.getItemId();
-
         //noinspection SimplifiableIfStatement
         if (id == R.id.action_settings) {
             return true;
         }
-
         if (id == R.id.action_add) {
             adapter.addItem("New element");
             return true;
         }
-
         if (id == R.id.action_clear) {
             adapter.clearItems();
             return true;
@@ -271,7 +306,6 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
     public boolean onCreateOptionsMenu(Menu menu) {
         // Inflate the menu; this adds items to the action bar if it is present.
         getMenuInflater().inflate(R.menu.main, menu);
-
         MenuItem search = menu.findItem(R.id.action_search);
         // Строка поиска
         final SearchView searchText = (SearchView) search.getActionView();
@@ -281,16 +315,16 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
             public boolean onQueryTextSubmit(String query) {
                 Snackbar.make(searchText, query, Snackbar.LENGTH_LONG).show();
 //                adapter.addItem(query);
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        try {
-                            showWeather(query);
-                        } catch (NullPointerException e) {
-                            System.out.println("Error");
-                        }
-                    }
-                });
+//                runOnUiThread(new Runnable() {
+//                    @Override
+//                    public void run() {
+//                        try {
+//                            showWeather(query);
+//                        } catch (NullPointerException e) {
+//                            System.out.println("Error");
+//                        }
+//                    }
+//                });
                 return true;
             }
 
@@ -308,28 +342,24 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
     public boolean onNavigationItemSelected(@NonNull MenuItem item) {
         // Handle navigation view item clicks here.
         int id = item.getItemId();
-
         switch (id) {
             case R.id.nav_home:
-                FragmentManager fm = getFragmentManager();
-                FragmentTransaction ft = fm.beginTransaction();
-
-                ft.replace(R.id.fragment_container, homeFragment);
-                ft.commit();
+                fragmentManager = getFragmentManager();
+                fragmentTransaction = fragmentManager.beginTransaction();
+                fragmentTransaction.replace(R.id.fragment_container, homeFragment);
+                fragmentTransaction.commit();
                 break;
             case R.id.nav_history:
-                FragmentManager fm2 = getFragmentManager();
-                FragmentTransaction ft2 = fm2.beginTransaction();
-
-                ft2.replace(R.id.fragment_container, historyFragment);
-                ft2.commit();
+                fragmentManager = getFragmentManager();
+                fragmentTransaction = fragmentManager.beginTransaction();
+                fragmentTransaction.replace(R.id.fragment_container, historyFragment);
+                fragmentTransaction.commit();
                 break;
             case R.id.nav_settings:
-                FragmentManager fm3 = getFragmentManager();
-                FragmentTransaction ft3 = fm3.beginTransaction();
-
-                ft3.replace(R.id.fragment_container, settingsFragment);
-                ft3.commit();
+                fragmentManager = getFragmentManager();
+                fragmentTransaction = fragmentManager.beginTransaction();
+                fragmentTransaction.replace(R.id.fragment_container, settingsFragment);
+                fragmentTransaction.commit();
                 break;
             case R.id.nav_share:
                 //TODO:
@@ -343,7 +373,7 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         return true;
     }
 
-    private void failConnection(){
+    private void failConnection() {
         // Создаём билдер и передаём контекст приложения
         AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
         // В билдере указываем заголовок окна (можно указывать как ресурс,
