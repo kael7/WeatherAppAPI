@@ -5,15 +5,11 @@ import android.app.FragmentManager;
 import android.app.FragmentTransaction;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
-import android.content.ComponentName;
 import android.content.Context;
 import android.content.DialogInterface;
-import android.content.Intent;
-import android.content.ServiceConnection;
 import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.IBinder;
 import android.view.ContextMenu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
@@ -23,15 +19,16 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.Toast;
 
+import com.example.weatherappapi.dao.WeatherDao;
 import com.example.weatherappapi.fragments.HistoryFragment;
 import com.example.weatherappapi.fragments.HomeFragment;
 import com.example.weatherappapi.fragments.SettingsFragment;
 import com.example.weatherappapi.interfaces.OpenWeather;
+import com.example.weatherappapi.model.WeatherHistory;
 import com.example.weatherappapi.model.WeatherRequest;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.google.android.material.snackbar.Snackbar;
 import com.google.android.material.navigation.NavigationView;
-import com.google.android.material.textfield.TextInputEditText;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.ActionBarDrawerToggle;
@@ -64,7 +61,8 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
     private HistoryFragment historyFragment;
     private SettingsFragment settingsFragment;
     private AppBarConfiguration mAppBarConfiguration;
-    private ListAdapter adapter;
+    private WeatherRecyclerAdapter adapter;
+    private WeatherSource weatherSource;
 
     private EditText city;
     private EditText temperature;
@@ -72,7 +70,7 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
     private EditText humidity;
     private EditText windSpeed;
     private SharedPreferences sharedPref;
-    private EditText editCity;
+    private EditText editCityKey;
     private EditText editApiKey;
 
     @Override
@@ -92,7 +90,7 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         Toolbar toolbar = initToolbar();
         initFab();
         initDrawer(toolbar);
-//        initList();
+//        initRecyclerView();
         initGui();
         initPreferences();
         initRetorfit();
@@ -139,7 +137,7 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
             @Override
             public void onClick(View v) {
                 savePreferences();            // Сохраняем настройки
-                requestRetrofit(editCity.getText().toString(), editApiKey.getText().toString());
+                requestRetrofit(editCityKey.getText().toString(), editApiKey.getText().toString());
             }
         });
 
@@ -155,14 +153,19 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
     private void savePreferences() {
         SharedPreferences.Editor editor = sharedPref.edit();
         editor.putString("apiKey", editApiKey.getText().toString());
+        editor.putString("cityKey", editCityKey.getText().toString());
         editor.commit();
     }
 
     // Загружаем настройки
     private void loadPreferences() {
+        String cityKey = null;
         String apiKey = BuildConfig.WEATHER_API_KEY;
+
         String loadedApiKey = sharedPref.getString("apiKey", apiKey);
+        String loadedCityKey = sharedPref.getString("cityKey", cityKey);
         editApiKey.setText(loadedApiKey);
+        editCityKey.setText(loadedCityKey);
     }
 
     @Override
@@ -180,7 +183,7 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         windSpeed = findViewById(R.id.textWindspeed);
 
         editApiKey = findViewById(R.id.editApiKey);
-        editCity = findViewById(R.id.editCity);
+        editCityKey = findViewById(R.id.editCity);
     }
 
     private Toolbar initToolbar() {
@@ -214,14 +217,14 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
                         int id = item.getItemId();
                         switch (id) {
                             case R.id.add_popup:
-                                adapter.addItem(String.format("New element %d", adapter.getItemCount()));
+//                                adapter.addItem(String.format("New element %d", adapter.getItemCount()));
                                 return true;
                             case R.id.clear_popup:
-                                adapter.clearItems();
+//                                adapter.clearItems();
                                 return true;
                             case R.id.custom_id:
-                                Snackbar.make(view, "Menu item added - clicked", Snackbar.LENGTH_LONG)
-                                        .setAction("Action", null).show();
+//                                Snackbar.make(view, "Menu item added - clicked", Snackbar.LENGTH_LONG)
+//                                        .setAction("Action", null).show();
                                 return true;
                         }
                         return true;
@@ -232,15 +235,21 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         });
     }
 
-    private void initList() {
+    private void initRecyclerView() {
         RecyclerView recyclerView = findViewById(R.id.recycler_list);
         // Эта установка повышает производительность системы
         recyclerView.setHasFixedSize(true);
         // Будем работать со встроенным менеджером
         LinearLayoutManager layoutManager = new LinearLayoutManager(this);
         recyclerView.setLayoutManager(layoutManager);
+
+        WeatherDao weatherDao = App
+                .getInstance()
+                .getWeatherDao();
+        weatherSource = new WeatherSource(weatherDao);
+
         // Устанавливаем адаптер
-        adapter = new ListAdapter(initData(), this);
+        adapter = new WeatherRecyclerAdapter(weatherSource, this);
         recyclerView.setAdapter(adapter);
     }
 
@@ -268,16 +277,21 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         int id = item.getItemId();
         switch (id) {
             case R.id.add_context:
-                adapter.addItem(String.format("New element %d", adapter.getItemCount()));
+//                adapter.addItem(String.format("New element %d", adapter.getItemCount()));
                 return true;
             case R.id.update_context:
-                adapter.updateItem(String.format("Updated element %d", adapter.getMenuPosition()), adapter.getMenuPosition());
+//                adapter.updateItem(String.format("Updated element %d", adapter.getMenuPosition()), adapter.getMenuPosition());
                 return true;
             case R.id.remove_context:
-                adapter.removeItem(adapter.getMenuPosition());
+//                adapter.removeItem(adapter.getMenuPosition());
+                WeatherHistory weatherForRemove = weatherSource
+                        .getWeatherHistories()
+                        .get((int) adapter.getMenuPosition());
+                weatherSource.removeWeather(weatherForRemove.id);
+                adapter.notifyItemRemoved((int) adapter.getMenuPosition());
                 return true;
             case R.id.clear_context:
-                adapter.clearItems();
+//                adapter.clearItems();
                 return true;
         }
         return super.onContextItemSelected(item);
@@ -292,11 +306,11 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
             return true;
         }
         if (id == R.id.action_add) {
-            adapter.addItem("New element");
+//            adapter.addItem("New element");
             return true;
         }
         if (id == R.id.action_clear) {
-            adapter.clearItems();
+//            adapter.clearItems();
             return true;
         }
         return super.onOptionsItemSelected(item);
