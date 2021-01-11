@@ -7,6 +7,8 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.content.DialogInterface;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Bundle;
@@ -63,6 +65,8 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
     private AppBarConfiguration mAppBarConfiguration;
     private WeatherRecyclerAdapter adapter;
     private WeatherSource weatherSource;
+    private BatteryLevelReceiver batteryLevelReceiver;
+    private NetworkConnectionReceiver networkConnectionReceiver;
 
     private EditText city;
     private EditText temperature;
@@ -77,6 +81,10 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        // Программная регистрация ресивера
+        registerReceiver(batteryLevelReceiver, new IntentFilter(Intent.ACTION_BATTERY_LOW));
+        registerReceiver(networkConnectionReceiver, new IntentFilter(Intent.ACTION_MANAGE_NETWORK_USAGE));
 
         // создадим фрагменты
         homeFragment = new HomeFragment();
@@ -96,6 +104,14 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
         initRetorfit();
         initEvents();
     }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        unregisterReceiver(batteryLevelReceiver);
+        unregisterReceiver(networkConnectionReceiver);
+    }
+
 
     private void initRetorfit() {
         Retrofit retrofit;
